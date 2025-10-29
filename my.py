@@ -3,15 +3,18 @@ import gzip
 from io import BytesIO
 import xml.etree.ElementTree as ET
 from datetime import datetime
-import json
 
 def fetch_epg(url):
-    """Fetch and decompress EPG XML from gzipped URL."""
+    """Fetch and decompress EPG XML from gzipped URL, or return plain XML if not gzipped."""
     response = requests.get(url)
     response.raise_for_status()
-    compressed = BytesIO(response.content)
-    decompressed = gzip.GzipFile(fileobj=compressed)
-    return decompressed.read().decode('utf-8')
+    content = response.content
+    try:
+        compressed = BytesIO(content)
+        decompressed = gzip.GzipFile(fileobj=compressed)
+        return decompressed.read().decode('utf-8')
+    except:
+        return content.decode('utf-8')
 
 def parse_epg(xml_content):
     """Parse EPG XML content."""
@@ -59,7 +62,7 @@ def create_combined_epg(channels_dict, all_programmes):
 
 # URLs for EPG sources
 UK_EPG_URL = 'https://epg.pw/xmltv/epg_GB.xml.gz'
-AU_EPG_URL = 'https://epg.pw/xmltv/epg_AU.xml.gz'
+AU_EPG_URL = 'https://raw.githubusercontent.com/matthuisman/i.mjh.nz/refs/heads/master/Kayo/epg.xml'
 IN_EPG_URL = 'https://avkb.short.gy/epg.xml.gz'
 
 # Static keywords for UK and AU
