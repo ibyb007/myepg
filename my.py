@@ -63,7 +63,7 @@ JIO_JSON_URL = 'https://raw.githubusercontent.com/mitthu786/tvepg/refs/heads/mai
 
 # Static keywords for UK and AU
 UK_KEYWORDS = ['sky sports', 'tnt sports']
-AU_KEYWORDS = ['fox sports']
+AU_KEYWORDS = ['fox']
 
 try:
     # Fetch JioTV channels for keywords
@@ -95,11 +95,16 @@ try:
 
     combined_root = create_combined_epg(all_channels, all_programmes)
 
-    # Write to file
+    # Write to gzipped file
     tree = ET.ElementTree(combined_root)
-    tree.write('epg.xml', encoding='utf-8', xml_declaration=True)
+    output = BytesIO()
+    tree.write(output, encoding='utf-8', xml_declaration=True)
+    output.seek(0)
+    compressed_data = gzip.compress(output.read())
+    with open('epg.xml.gz', 'wb') as f:
+        f.write(compressed_data)
 
-    print(f"EPG generated successfully. Found {len(all_channels)} channels and {len(all_programmes)} programmes.")
+    print(f"EPG generated successfully as epg.xml.gz. Found {len(all_channels)} channels and {len(all_programmes)} programmes.")
     print("Channels:")
     for ch_id, ch in all_channels.items():
         display = ch.find('display-name')
