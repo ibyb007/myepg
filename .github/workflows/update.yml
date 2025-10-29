@@ -25,11 +25,11 @@ jobs:
       - name: Run EPG script
         run: python my.py
 
-      - name: Commit and push epg.xml if changed
+      - name: Commit and push epg.xml.gz if changed
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add epg.xml
+          git add epg.xml.gz
           git diff --staged --quiet || git commit -m "Update EPG data [$(date +%Y-%m-%d)]"
           git push
         env:
