@@ -1,0 +1,35 @@
+name: Run EPG Fetcher
+
+on:
+  schedule:
+    - cron: '0 */12 * * *'  # Every 12 hours
+
+jobs:
+  fetch-epg:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Run EPG script
+        run: python my.py
+
+      - name: Commit and push epg.xml if changed
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add epg.xml
+          git diff --staged --quiet || git commit -m "Update EPG data [$(date +%Y-%m-%d)]"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
