@@ -18,17 +18,21 @@ def parse_epg(xml_content):
     return ET.fromstring(xml_content)
 
 def extract_channels_and_programmes(root, channel_keywords):
-    """Extract channels and programmes matching keywords in display-name."""
+    """Extract channels and programmes matching keywords in display-name or all if keywords is None."""
     channels = {}
     programmes = []
 
     # Extract channels
-    for channel in root.findall('.//channel'):
-        display_names = [dn.text for dn in channel.findall('display-name') if dn.text]
-        for keyword in channel_keywords:
-            if any(keyword.lower() in name.lower() for name in display_names):
-                channels[channel.attrib['id']] = channel
-                break
+    if channel_keywords is None:
+        for channel in root.findall('.//channel'):
+            channels[channel.attrib['id']] = channel
+    else:
+        for channel in root.findall('.//channel'):
+            display_names = [dn.text for dn in channel.findall('display-name') if dn.text]
+            for keyword in channel_keywords:
+                if any(keyword.lower() in name.lower() for name in display_names):
+                    channels[channel.attrib['id']] = channel
+                    break
 
     # Extract matching programmes
     for programme in root.findall('.//programme'):
@@ -56,24 +60,14 @@ def create_combined_epg(channels_dict, all_programmes):
 # URLs for EPG sources
 UK_EPG_URL = 'https://epg.pw/xmltv/epg_GB.xml.gz'
 AU_EPG_URL = 'https://epg.pw/xmltv/epg_AU.xml.gz'
-IN_EPG_URL = 'https://epg.pw/xmltv/epg_IN.xml.gz'
-
-# JioTV channels JSON URL
-JIO_JSON_URL = 'https://raw.githubusercontent.com/mitthu786/tvepg/refs/heads/main/jiotv/jiodata.json'
+IN_EPG_URL = 'https://avkb.short.gy/epg.xml.gz'
 
 # Static keywords for UK and AU
 UK_KEYWORDS = ['sky sports', 'tnt sports']
 AU_KEYWORDS = ['fox']
+IN_KEYWORDS = None  # Include all from IN source
 
 try:
-    # Fetch JioTV channels for keywords
-    jio_response = requests.get(JIO_JSON_URL)
-    jio_response.raise_for_status()
-    jio_data = jio_response.json()
-    IN_KEYWORDS = [ch['channel_name'] for ch in jio_data]
-
-    print(f"Fetched {len(IN_KEYWORDS)} JioTV channels for filtering.")
-
     # Fetch and parse UK EPG
     uk_xml = fetch_epg(UK_EPG_URL)
     uk_root = parse_epg(uk_xml)
