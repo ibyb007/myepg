@@ -30,7 +30,11 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add epg.xml.gz
-          git diff --staged --quiet || git commit -m "Update EPG data [$(date +%Y-%m-%d)]"
-          git push
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Update EPG data [$(date +%Y-%m-%d)]"
+            git push
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
