@@ -62,7 +62,7 @@ def create_combined_epg(channels_dict, all_programmes):
 
 # URLs for EPG sources
 UK_EPG_URL = 'https://epg.pw/xmltv/epg_GB.xml.gz'
-AU_EPG_URL = 'https://raw.githubusercontent.com/matthuisman/i.mjh.nz/refs/heads/master/Kayo/epg.xml'
+AU_EPG_URL = 'https://epg.pw/xmltv/epg_AU.xml'
 IN_EPG_URL = 'https://avkb.short.gy/epg.xml.gz'
 
 # Static keywords for UK and AU
