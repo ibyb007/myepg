@@ -92,7 +92,7 @@ AU_EPG_URL = 'https://epg.pw/xmltv/epg_AU.xml.gz'
 IN_EPG_URL = 'https://avkb.short.gy/epg.xml.gz'
 
 # Static keywords for UK and AU
-UK_KEYWORDS = ['sky sports', 'tnt sports']
+UK_KEYWORDS = ['skysp', 'tnt sports']  # Updated: 'skysp' matches "SkySpCricket HD" etc.
 AU_KEYWORDS = ['fox']
 IN_KEYWORDS = None  # Include all from IN source initially
 
