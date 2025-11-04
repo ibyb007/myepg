@@ -6,7 +6,10 @@ from datetime import datetime
 
 def fetch_epg(url):
     """Fetch and decompress EPG XML from gzipped URL, or return plain XML if not gzipped."""
-    response = requests.get(url)
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    response = requests.get(url, headers=headers)
     response.raise_for_status()
     content = response.content
     try:
@@ -44,6 +47,29 @@ def extract_channels_and_programmes(root, channel_keywords):
 
     return channels, programmes
 
+def filter_in_channels(channels_dict, excluded_groups, exclude_languages):
+    """Filter IN channels to exclude specified groups and languages based on display-names."""
+    filtered_channels = {}
+    for ch_id, ch in channels_dict.items():
+        display_names = [dn.text.lower() for dn in ch.findall('display-name') if dn.text]
+        
+        # Check for excluded groups (substring match in any display-name)
+        exclude_group = any(
+            any(group.lower() in name for group in excluded_groups)
+            for name in display_names
+        )
+        
+        # Check for excluded languages (substring match in any display-name)
+        exclude_lang = any(
+            any(lang.lower() in name for lang in exclude_languages)
+            for name in display_names
+        )
+        
+        if not (exclude_group or exclude_lang):
+            filtered_channels[ch_id] = ch
+    
+    return filtered_channels
+
 def create_combined_epg(channels_dict, all_programmes):
     """Create combined EPG XML."""
     tv = ET.Element('tv')
@@ -68,7 +94,13 @@ IN_EPG_URL = 'https://avkb.short.gy/epg.xml.gz'
 # Static keywords for UK and AU
 UK_KEYWORDS = ['sky sports', 'tnt sports']
 AU_KEYWORDS = ['fox']
-IN_KEYWORDS = None  # Include all from IN source
+IN_KEYWORDS = None  # Include all from IN source initially
+
+# Excluded groups (case-insensitive)
+EXCLUDED_GROUPS = ["devotional", "news", "business news", "music", "educational"]
+
+# Languages to exclude in channel titles (case-insensitive)
+EXCLUDE_LANGUAGES = ['tamil', 'telugu', 'oriya', 'gujarati', 'kannada', 'malayalam', 'bhojpuri', 'punjabi', 'marathi']
 
 try:
     # Fetch and parse UK EPG
@@ -86,9 +118,15 @@ try:
     in_root = parse_epg(in_xml)
     in_channels, in_programmes = extract_channels_and_programmes(in_root, IN_KEYWORDS)
 
+    # Filter IN channels to exclude specified groups and languages
+    filtered_in_channels = filter_in_channels(in_channels, EXCLUDED_GROUPS, EXCLUDE_LANGUAGES)
+    
+    # Filter IN programmes to match filtered channels
+    filtered_in_programmes = [p for p in in_programmes if p.attrib['channel'] in filtered_in_channels]
+
     # Combine
-    all_channels = {**uk_channels, **au_channels, **in_channels}
-    all_programmes = uk_programmes + au_programmes + in_programmes
+    all_channels = {**uk_channels, **au_channels, **filtered_in_channels}
+    all_programmes = uk_programmes + au_programmes + filtered_in_programmes
 
     combined_root = create_combined_epg(all_channels, all_programmes)
 
