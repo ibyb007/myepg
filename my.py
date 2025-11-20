@@ -3,185 +3,172 @@ import gzip
 from io import BytesIO
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
-import time  # For retries
+import time
+import os
+import traceback
 
-def fetch_epg(url, max_retries=3):
-    """Fetch and decompress EPG XML from gzipped URL, or return plain XML if not gzipped."""
+def fetch_epg(url, max_retries=5):
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Referer': 'https://epg.pw/'  # Extra header to mimic browser
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept-Encoding': 'gzip, deflate',
+        'Connection': 'keep-alive'
     }
     for attempt in range(max_retries):
         try:
-            response = requests.get(url, headers=headers, timeout=60)
-            response.raise_for_status()
-            content = response.content
-            print(f"Fetched {url}: {len(content)} bytes")
-            if len(content) < 100:  # Likely empty/error page
-                print(f"Warning: Short response from {url} - possible block")
+            r = requests.get(url, headers=headers, timeout=90)
+            r.raise_for_status()
+            content = r.content
+
             try:
-                compressed = BytesIO(content)
-                decompressed = gzip.GzipFile(fileobj=compressed)
-                xml_str = decompressed.read().decode('utf-8')
-                print(f"Decompressed {url}: {len(xml_str)} chars")
+                xml_str = gzip.decompress(content).decode('utf-8')
+                print(f"[+] Decompressed → {len(xml_str):,} chars")
                 return xml_str
             except:
-                return content.decode('utf-8')
+                xml_str = content.decode('utf-8')
+                print(f"[+] Plain XML → {len(xml_str):,} chars")
+                return xml_str
         except Exception as e:
-            print(f"Attempt {attempt+1} failed for {url}: {e}")
+            print(f"[!] Attempt {attempt+1}/{max_retries} failed: {e}")
             if attempt < max_retries - 1:
-                time.sleep(2 ** attempt)  # Exponential backoff
-    raise Exception(f"Failed to fetch {url} after {max_retries} attempts")
+                time.sleep(3 * (attempt + 1))
+    print(f"[X] Failed to fetch {url}")
+    return None
 
-def parse_epg(xml_content):
-    """Parse EPG XML content."""
-    if len(xml_content) < 100:
-        raise ValueError("XML content too short - likely fetch error")
-    return ET.fromstring(xml_content)
+def parse_epg(xml_str):
+    if not xml_str or len(xml_str) < 1000:
+        raise ValueError("Empty or invalid XML")
+    return ET.fromstring(xml_str)
 
-def extract_channels_and_programmes(root, channel_keywords):
-    """Extract channels and programmes matching keywords in display-name or all if keywords is None."""
+def extract_channels_and_programmes(root, keywords=None):
     channels = {}
     programmes = []
 
-    # Extract channels
-    matched_channels = []
-    if channel_keywords is None:
-        for channel in root.findall('.//channel'):
-            channels[channel.attrib['id']] = channel
-    else:
-        for channel in root.findall('.//channel'):
-            display_names = [dn.text for dn in channel.findall('display-name') if dn.text]
-            for keyword in channel_keywords:
-                if any(keyword.lower() in name.lower() for name in display_names):
-                    channels[channel.attrib['id']] = channel
-                    matched_channels.append((channel.attrib['id'], display_names[0] if display_names else ''))
-                    break
+    # Filter channels by keywords if provided
+    for channel in root.findall('.//channel'):
+        ch_id = channel.attrib['id']
+        display_names = [dn.text.lower() for dn in channel.findall('display-name') if dn.text]
+        
+        if keywords:
+            if not any(any(kw in name for kw in keywords) for name in display_names):
+                continue  # Skip non-matching channel
+        channels[ch_id] = channel
 
-    print(f"Extracted {len(channels)} channels (matches: {matched_channels})")
-
-    # Extract matching programmes (next 7 days only for relevance)
+    # Programmes (next 8 days)
     now = datetime.now()
-    future_cutoff = now + timedelta(days=7)
-    for programme in root.findall('.//programme'):
-        if programme.attrib['channel'] in channels:
-            start_str = programme.attrib['start']
-            if len(start_str) >= 12:
-                start_dt = datetime.strptime(start_str[:12], '%Y%m%d%H%M')
-                if now <= start_dt <= future_cutoff:
-                    programmes.append(programme)
-            else:
-                programmes.append(programme)  # Fallback if malformed
+    cutoff = now + timedelta(days=8)
+    for prog in root.findall('.//programme'):
+        if prog.attrib['channel'] in channels:
+            start_str = prog.attrib.get('start', '')
+            if len(start_str) >= 14:
+                try:
+                    start_dt = datetime.strptime(start_str[:14], '%Y%m%d%H%M%S')
+                    if start_dt < now - timedelta(days=1):  # Skip too old
+                        continue
+                    if start_dt > cutoff:
+                        continue
+                except:
+                    pass
+            programmes.append(prog)
 
-    print(f"Extracted {len(programmes)} relevant programmes")
     return channels, programmes
 
-def filter_in_channels(channels_dict, exclude_languages):
-    """Filter IN channels to exclude specified languages based on display-names."""
-    filtered_channels = {}
-    excluded_count = 0
+def filter_out_regional(channels_dict):
+    exclude = ['tamil', 'telugu', 'malayalam', 'kannada', 'punjabi', 'marathi', 'gujarati', 'bengali', 'oriya', 'bhojpuri', 'urdu']
+    filtered = {}
+    removed = 0
     for ch_id, ch in channels_dict.items():
-        display_names = [dn.text.lower() for dn in ch.findall('display-name') if dn.text]
-        
-        # Check for excluded languages (substring match in any display-name)
-        exclude_lang = any(
-            any(lang.lower() in name for lang in exclude_languages)
-            for name in display_names
-        )
-        
-        if not exclude_lang:
-            filtered_channels[ch_id] = ch
+        names = [dn.text.lower() for dn in ch.findall('display-name') if dn.text]
+        if any(bad in ' '.join(names) for bad in exclude):
+            removed += 1
         else:
-            excluded_count += 1
-    
-    print(f"IN filter: Kept {len(filtered_channels)}/{len(channels_dict)} channels (excluded {excluded_count} for languages)")
-    return filtered_channels
+            filtered[ch_id] = ch
+    if removed:
+        print(f"    → Removed {removed} regional language channels")
+    return filtered
 
-def create_combined_epg(channels_dict, all_programmes):
-    """Create combined EPG XML."""
-    tv = ET.Element('tv')
-    tv.set('generator-info-name', 'Custom Sports EPG Fetcher')
-    tv.set('generator-info-url', 'https://example.com')
+# ========================================
+# CONFIG
+# ========================================
 
-    # Add channels
-    for channel in channels_dict.values():
-        tv.append(channel)
-
-    # Add programmes
-    for programme in all_programmes:
-        tv.append(programme)
-
-    return tv
-
-# URLs for EPG sources
 UK_EPG_URL = 'https://epg.pw/xmltv/epg_GB.xml.gz'
-AU_EPG_URL = 'https://epg.pw/xmltv/epg_AU.xml.gz'
 IN_EPG_URL = 'https://avkb.short.gy/epg.xml.gz'
 
-# Broader keywords for UK and AU
-UK_KEYWORDS = ['sky', 'tnt sports', 'skysp']  # Fallback to catch variations
-AU_KEYWORDS = ['fox', 'channel 7']  # Added common AU sports
-IN_KEYWORDS = None  # Include all from IN source initially
+# THIS COMES FROM GITHUB ACTIONS SECRET (Settings → Secrets and variables → Actions)
+CUSTOM_EPG_URL = os.getenv('CUSTOM_EPG_URL')  # e.g. http://snaptv.lol:80/xmltv.php?username=xxx&password=xxx
 
-# Languages to exclude in channel titles (case-insensitive)
-EXCLUDE_LANGUAGES = ['tamil', 'telugu', 'oriya', 'gujarati', 'kannada', 'malayalam', 'bhojpuri', 'punjabi', 'marathi']
+UK_KEYWORDS = ['sky', 'tnt sports', 'premier sports', 'bt sport', 'eurosport', 'itv', 'bbc']
+CUSTOM_KEYWORDS = ['fox', 'kayo', 'astro']  # ← Your requested filters
+
+print("=== Starting EPG Merge (UK + IN + Custom Filtered) ===\n")
+
+all_channels = {}
+all_programmes = []
 
 try:
-    # Fetch and parse UK EPG
+    # 1. UK Sports
+    print("1. Fetching UK EPG...")
     uk_xml = fetch_epg(UK_EPG_URL)
-    uk_root = parse_epg(uk_xml)
-    uk_channels, uk_programmes = extract_channels_and_programmes(uk_root, UK_KEYWORDS)
+    if uk_xml:
+        uk_root = parse_epg(uk_xml)
+        uk_ch, uk_prog = extract_channels_and_programmes(uk_root, UK_KEYWORDS)
+        all_channels.update(uk_ch)
+        all_programmes.extend(uk_prog)
+        print(f"   → UK: {len(uk_ch)} channels | {len(uk_prog)} programmes\n")
 
-    # Fetch and parse AU EPG
-    au_xml = fetch_epg(AU_EPG_URL)
-    au_root = parse_epg(au_xml)
-    au_channels, au_programmes = extract_channels_and_programmes(au_root, AU_KEYWORDS)
-
-    # Fetch and parse IN EPG
+    # 2. India (Hindi/English only)
+    print("2. Fetching India EPG...")
     in_xml = fetch_epg(IN_EPG_URL)
-    in_root = parse_epg(in_xml)
-    in_channels, in_programmes = extract_channels_and_programmes(in_root, IN_KEYWORDS)
+    if in_xml:
+        in_root = parse_epg(in_xml)
+        in_ch, in_prog = extract_channels_and_programmes(in_root)  # All first
+        in_ch = filter_out_regional(in_ch)
+        in_prog = [p for p in in_prog if p.attrib['channel'] in in_ch]
+        all_channels.update(in_ch)
+        all_programmes.extend(in_prog)
+        print(f"   → India (filtered): {len(in_ch)} channels | {len(in_prog)} programmes\n")
 
-    # Filter IN channels to exclude specified languages only
-    filtered_in_channels = filter_in_channels(in_channels, EXCLUDE_LANGUAGES)
-    
-    # Filter IN programmes to match filtered channels
-    filtered_in_programmes = [p for p in in_programmes if p.attrib['channel'] in filtered_in_channels]
+    # 3. Custom 3rd-party source (filtered by fox/kayo/astro)
+    if CUSTOM_EPG_URL:
+        print(f"3. Fetching Custom EPG (filtered: {', '.join(CUSTOM_KEYWORDS)})...")
+        custom_xml = fetch_epg(CUSTOM_EPG_URL)
+        if custom_xml:
+            custom_root = parse_epg(custom_xml)
+            cust_ch, cust_prog = extract_channels_and_programmes(custom_root, CUSTOM_KEYWORDS)
+            all_channels.update(cust_ch)
+            all_programmes.extend(cust_prog)
+            print(f"   → Custom (fox/kayo/astro): {len(cust_ch)} channels | {len(cust_prog)} programmes\n")
+        else:
+            print("   → Custom EPG fetch failed\n")
+    else:
+        print("⚠️  CUSTOM_EPG_URL secret not set! Skipping custom source.\n")
 
-    # Combine
-    all_channels = {**uk_channels, **au_channels, **filtered_in_channels}
-    all_programmes = uk_programmes + au_programmes + filtered_in_programmes
+    # Final output
+    if not all_programmes:
+        raise Exception("No programmes collected from any source!")
 
-    print(f"Combined: {len(all_channels)} channels, {len(all_programmes)} programmes")
+    tv = ET.Element('tv', {
+        'generator-info-name': 'Merged Sports EPG (UK+IN+Custom)',
+        'generator-info-url': 'GitHub Actions'
+    })
 
-    if all_programmes:
-        sample_prog = all_programmes[0]
-        print(f"Sample programme: {sample_prog.find('title').text if sample_prog.find('title') is not None else 'No title'} on channel {sample_prog.attrib['channel']}")
+    for ch in all_channels.values():
+        tv.append(ch)
+    for prog in all_programmes:
+        tv.append(prog)
 
-    combined_root = create_combined_epg(all_channels, all_programmes)
+    xml_bytes = BytesIO()
+    ET.ElementTree(tv).write(xml_bytes, encoding='utf-8', xml_declaration=True)
+    compressed = gzip.compress(xml_bytes.getvalue())
 
-    # Write to gzipped file
-    tree = ET.ElementTree(combined_root)
-    output = BytesIO()
-    tree.write(output, encoding='utf-8', xml_declaration=True)
-    output.seek(0)
-    xml_bytes = output.read()
-    print(f"Generated XML: {len(xml_bytes)} bytes")
-    compressed_data = gzip.compress(xml_bytes)
-    print(f"Compressed: {len(compressed_data)} bytes")
     with open('epg.xml.gz', 'wb') as f:
-        f.write(compressed_data)
+        f.write(compressed)
 
-    print(f"EPG generated successfully as epg.xml.gz. Found {len(all_channels)} channels and {len(all_programmes)} programmes.")
-    print("Channels:")
-    for ch_id, ch in list(all_channels.items())[:10]:  # First 10 to avoid spam
-        display = ch.find('display-name')
-        if display is not None:
-            print(f"- {display.text} ({ch_id})")
-    if len(all_channels) > 10:
-        print(f"... and {len(all_channels) - 10} more")
+    print(f"\n🎉 SUCCESS! epg.xml.gz generated")
+    print(f"   Total Channels   : {len(all_channels)}")
+    print(f"   Total Programmes : {len(all_programmes)}")
+    print(f"   File size        : {len(compressed)/1024:.1f} KB")
 
 except Exception as e:
-    print(f"Error fetching or processing EPG: {e}")
-    import traceback
+    print(f"\n💥 FAILED: {e}")
     traceback.print_exc()
+    exit(1)
