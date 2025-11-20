@@ -2,8 +2,8 @@ name: Run EPG Fetcher
 
 on:
   schedule:
-    - cron: '0 */12 * * *'  # Every 12 hours
-  workflow_dispatch:  # Allows manual triggering
+    - cron: '0 */6 * * *'   # Changed to every 6 hours (recommended for sports EPG)
+  workflow_dispatch:
 
 jobs:
   fetch-epg:
@@ -11,6 +11,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}   # Needed for push later
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -23,18 +25,22 @@ jobs:
           pip install requests
 
       - name: Run EPG script
-        run: python my.py
+        env:
+          CUSTOM_EPG_URL: ${{ secrets.CUSTOM_EPG_URL }}   # ← THIS IS REQUIRED!
+        run: python my.py                                   # ← Make sure filename matches!
 
       - name: Commit and push epg.xml.gz if changed
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Action"
           git add epg.xml.gz
+          
           if git diff --staged --quiet; then
-            echo "No changes to commit."
-          else
-            git commit -m "Update EPG data [$(date +%Y-%m-%d)]"
-            git push
+            echo "No changes detected in epg.xml.gz"
+            exit 0
           fi
+          
+          git commit -m "Update EPG data $(date '+%Y-%m-%d %H:%M UTC')"
+          git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
