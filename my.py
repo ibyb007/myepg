@@ -73,7 +73,7 @@ def extract_channels_and_programmes(root, keywords=None):
     return channels, programmes
 
 def filter_out_regional(channels_dict):
-    exclude = ['tamil', 'telugu', 'malayalam', 'kannada', 'punjabi', 'marathi', 'gujarati', 'bengali', 'oriya', 'bhojpuri', 'urdu']
+    exclude = ['tamil', 'telugu', 'malayalam', 'kannada', 'punjabi', 'marathi', 'gujarati', 'oriya', 'bhojpuri', 'urdu']
     filtered = {}
     removed = 0
     for ch_id, ch in channels_dict.items():
@@ -97,7 +97,7 @@ IN_EPG_URL = 'https://avkb.short.gy/epg.xml.gz'
 CUSTOM_EPG_URL = os.getenv('CUSTOM_EPG_URL')  # e.g. http://snaptv.lol:80/xmltv.php?username=xxx&password=xxx
 
 UK_KEYWORDS = ['sky', 'tnt sports', 'premier sports', 'bt sport', 'eurosport', 'itv', 'bbc']
-CUSTOM_KEYWORDS = ['fox', 'kayo', 'astro']  # ← Your requested filters
+CUSTOM_KEYWORDS = ['fox', 'AU: Kayo 4K', 'AU: BEIN', 'AU: ESPN', 'astro']  # ← Your requested filters
 
 print("=== Starting EPG Merge (UK + IN + Custom Filtered) ===\n")
 
