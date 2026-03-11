@@ -91,7 +91,7 @@ def filter_out_regional(channels_dict):
 # ========================================
 
 UK_EPG_URL = 'https://epg.pw/xmltv/epg_GB.xml.gz'
-IN_EPG_URL = 'https://avkb.short.gy/epg.xml.gz'
+IN_EPG_URL = 'https://avkb.short.gy/jioepg.xml.gz'
 
 # THIS COMES FROM GITHUB ACTIONS SECRET (Settings → Secrets and variables → Actions)
 CUSTOM_EPG_URL = os.getenv('CUSTOM_EPG_URL')  # e.g. http://snaptv.lol:80/xmltv.php?username=xxx&password=xxx
