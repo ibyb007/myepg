@@ -43,7 +43,7 @@ def extract_channels_and_programmes(root, keywords=None, channel_ids=None):
     channels = {}
     programmes = []
 
-    # Channels
+    # Channels - exact ID match if channel_ids provided
     for channel in root.findall('.//channel'):
         ch_id = channel.attrib.get('id')
         if not ch_id:
@@ -57,18 +57,20 @@ def extract_channels_and_programmes(root, keywords=None, channel_ids=None):
             if not any(any(kw in name for kw in keywords) for name in display_names):
                 continue
 
+        # Keep the channel (note: if duplicate IDs exist in source, last one wins)
         channels[ch_id] = channel
 
-    # Programmes (next 8 days)
+    # Programmes (next 8 days only)
     now = datetime.now()
     cutoff = now + timedelta(days=8)
     for prog in root.findall('.//programme'):
-        if prog.attrib.get('channel') in channels:
+        ch_id = prog.attrib.get('channel')
+        if ch_id in channels:
             start_str = prog.attrib.get('start', '')
             if len(start_str) >= 14:
                 try:
                     start_dt = datetime.strptime(start_str[:14], '%Y%m%d%H%M%S')
-                    if start_dt < now - timedelta(days=1):  # Skip too old
+                    if start_dt < now - timedelta(days=1):
                         continue
                     if start_dt > cutoff:
                         continue
@@ -98,20 +100,36 @@ def filter_out_regional(channels_dict):
 
 UK_EPG_URL    = 'https://epg.pw/xmltv/epg_GB.xml.gz'
 IN_EPG_URL    = 'https://avkb.short.gy/jioepg.xml.gz'
-IN_EPG_PW_URL = 'https://epg.pw/xmltv/epg_IN.xml.gz'           # ← New source
+IN_EPG_PW_URL = 'https://epg.pw/xmltv/epg_IN.xml.gz'           # ← Selective source
 
-# THIS COMES FROM GITHUB ACTIONS SECRET
+# GitHub Actions secret
 CUSTOM_EPG_URL = os.getenv('CUSTOM_EPG_URL')
 
 UK_KEYWORDS    = ['sky', 'tnt sports', 'premier sports', 'bt sport', 'eurosport', 'itv', 'bbc']
 CUSTOM_KEYWORDS = ['fox', 'AU: Kayo 4K', 'AU: BEIN', 'AU: ESPN', 'astro']
 
-# Specific channel IDs from the new epg_IN.xml source
+# All requested channel IDs from epg.pw IN source (unique set)
 TARGET_CHANNEL_IDS = {
+    # Previous batch
     '463932',   # Sony Pix hd
     '404001',   # Zee bangla hd
     '464235',   # Star Jalsha HD
-    '464213'    # Sony BBC Earth HD
+    '464213',   # Sony BBC Earth HD
+    # New batch
+    '464165',   # Star Gold hd
+    '407811',   # 9x jalwa
+    '463907',   # Zee cinema hd
+    '463939',   # Star Gold 2 HD
+    '463898',   # Star Gold Select HD / Star Movies Select HD (shared ID)
+    '463993',   # Star Movies HD
+    '441259',   # Zee TV (SD)
+    '441340',   # Zee TV HD
+    '464226',   # &TV (SD)
+    '492945',   # &TV HD
+    '493399',   # Zee Cinema (SD)
+    '464142',   # &pictures (SD)
+    '463886',   # &pictures HD
+    '448070'    # &xplor HD
 }
 
 print("=== Starting EPG Merge (UK + IN(Jio) + IN(epg.pw selective) + Custom Filtered) ===\n")
@@ -142,8 +160,8 @@ try:
         all_programmes.extend(in_prog)
         print(f"   → India (Jio filtered): {len(in_ch)} channels | {len(in_prog)} programmes\n")
 
-    # 2.5 New: India epg.pw - only specific channels
-    print("2.5 Fetching India EPG (epg.pw) - selective channels...")
+    # 2.5 India epg.pw - only the requested specific channels
+    print(f"2.5 Fetching India EPG (epg.pw) - {len(TARGET_CHANNEL_IDS)} targeted channels...")
     in_pw_xml = fetch_epg(IN_EPG_PW_URL)
     if in_pw_xml:
         in_pw_root = parse_epg(in_pw_xml)
@@ -153,10 +171,12 @@ try:
         all_channels.update(in_pw_ch)
         all_programmes.extend(in_pw_prog)
         found = len(in_pw_ch)
-        print(f"   → India (epg.pw): {found} matching channels found | {len(in_pw_prog)} programmes")
+        print(f"   → India (epg.pw): {found} matching channels | {len(in_pw_prog)} programmes")
         if found < len(TARGET_CHANNEL_IDS):
             missing = TARGET_CHANNEL_IDS - set(in_pw_ch.keys())
-            print(f"      Missing: {', '.join(missing)}")
+            print(f"      Missing IDs: {', '.join(sorted(missing))}")
+        else:
+            print("      All requested IDs found!")
         print("")
     else:
         print("   → epg.pw India EPG fetch failed - skipping\n")
@@ -181,7 +201,7 @@ try:
         raise Exception("No programmes collected from any source!")
 
     tv = ET.Element('tv', {
-        'generator-info-name': 'Merged Sports & Selected EPG (UK+IN+Jio+epg.pw+Custom)',
+        'generator-info-name': 'Merged EPG (UK + IN Jio + Selective Hindi/Movies/Entertainment from epg.pw + Custom)',
         'generator-info-url': 'GitHub Actions'
     })
 
