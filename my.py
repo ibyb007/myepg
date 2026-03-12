@@ -39,25 +39,31 @@ def parse_epg(xml_str):
         raise ValueError("Empty or invalid XML")
     return ET.fromstring(xml_str)
 
-def extract_channels_and_programmes(root, keywords=None):
+def extract_channels_and_programmes(root, keywords=None, channel_ids=None):
     channels = {}
     programmes = []
 
-    # Filter channels by keywords if provided
+    # Channels
     for channel in root.findall('.//channel'):
-        ch_id = channel.attrib['id']
-        display_names = [dn.text.lower() for dn in channel.findall('display-name') if dn.text]
-        
-        if keywords:
+        ch_id = channel.attrib.get('id')
+        if not ch_id:
+            continue
+
+        if channel_ids:
+            if ch_id not in channel_ids:
+                continue
+        elif keywords:
+            display_names = [dn.text.lower() for dn in channel.findall('display-name') if dn.text]
             if not any(any(kw in name for kw in keywords) for name in display_names):
-                continue  # Skip non-matching channel
+                continue
+
         channels[ch_id] = channel
 
     # Programmes (next 8 days)
     now = datetime.now()
     cutoff = now + timedelta(days=8)
     for prog in root.findall('.//programme'):
-        if prog.attrib['channel'] in channels:
+        if prog.attrib.get('channel') in channels:
             start_str = prog.attrib.get('start', '')
             if len(start_str) >= 14:
                 try:
@@ -90,16 +96,25 @@ def filter_out_regional(channels_dict):
 # CONFIG
 # ========================================
 
-UK_EPG_URL = 'https://epg.pw/xmltv/epg_GB.xml.gz'
-IN_EPG_URL = 'https://avkb.short.gy/jioepg.xml.gz'
+UK_EPG_URL    = 'https://epg.pw/xmltv/epg_GB.xml.gz'
+IN_EPG_URL    = 'https://avkb.short.gy/jioepg.xml.gz'
+IN_EPG_PW_URL = 'https://epg.pw/xmltv/epg_IN.xml.gz'           # ← New source
 
-# THIS COMES FROM GITHUB ACTIONS SECRET (Settings → Secrets and variables → Actions)
-CUSTOM_EPG_URL = os.getenv('CUSTOM_EPG_URL')  # e.g. http://snaptv.lol:80/xmltv.php?username=xxx&password=xxx
+# THIS COMES FROM GITHUB ACTIONS SECRET
+CUSTOM_EPG_URL = os.getenv('CUSTOM_EPG_URL')
 
-UK_KEYWORDS = ['sky', 'tnt sports', 'premier sports', 'bt sport', 'eurosport', 'itv', 'bbc']
-CUSTOM_KEYWORDS = ['fox', 'AU: Kayo 4K', 'AU: BEIN', 'AU: ESPN', 'astro']  # ← Your requested filters
+UK_KEYWORDS    = ['sky', 'tnt sports', 'premier sports', 'bt sport', 'eurosport', 'itv', 'bbc']
+CUSTOM_KEYWORDS = ['fox', 'AU: Kayo 4K', 'AU: BEIN', 'AU: ESPN', 'astro']
 
-print("=== Starting EPG Merge (UK + IN + Custom Filtered) ===\n")
+# Specific channel IDs from the new epg_IN.xml source
+TARGET_CHANNEL_IDS = {
+    '463932',   # Sony Pix hd
+    '404001',   # Zee bangla hd
+    '464235',   # Star Jalsha HD
+    '464213'    # Sony BBC Earth HD
+}
+
+print("=== Starting EPG Merge (UK + IN(Jio) + IN(epg.pw selective) + Custom Filtered) ===\n")
 
 all_channels = {}
 all_programmes = []
@@ -110,13 +125,13 @@ try:
     uk_xml = fetch_epg(UK_EPG_URL)
     if uk_xml:
         uk_root = parse_epg(uk_xml)
-        uk_ch, uk_prog = extract_channels_and_programmes(uk_root, UK_KEYWORDS)
+        uk_ch, uk_prog = extract_channels_and_programmes(uk_root, keywords=UK_KEYWORDS)
         all_channels.update(uk_ch)
         all_programmes.extend(uk_prog)
         print(f"   → UK: {len(uk_ch)} channels | {len(uk_prog)} programmes\n")
 
-    # 2. India (Hindi/English only)
-    print("2. Fetching India EPG...")
+    # 2. India (Jio - Hindi/English only)
+    print("2. Fetching India EPG (Jio)...")
     in_xml = fetch_epg(IN_EPG_URL)
     if in_xml:
         in_root = parse_epg(in_xml)
@@ -125,29 +140,48 @@ try:
         in_prog = [p for p in in_prog if p.attrib['channel'] in in_ch]
         all_channels.update(in_ch)
         all_programmes.extend(in_prog)
-        print(f"   → India (filtered): {len(in_ch)} channels | {len(in_prog)} programmes\n")
+        print(f"   → India (Jio filtered): {len(in_ch)} channels | {len(in_prog)} programmes\n")
 
-    # 3. Custom 3rd-party source (filtered by fox/kayo/astro)
+    # 2.5 New: India epg.pw - only specific channels
+    print("2.5 Fetching India EPG (epg.pw) - selective channels...")
+    in_pw_xml = fetch_epg(IN_EPG_PW_URL)
+    if in_pw_xml:
+        in_pw_root = parse_epg(in_pw_xml)
+        in_pw_ch, in_pw_prog = extract_channels_and_programmes(
+            in_pw_root, channel_ids=TARGET_CHANNEL_IDS
+        )
+        all_channels.update(in_pw_ch)
+        all_programmes.extend(in_pw_prog)
+        found = len(in_pw_ch)
+        print(f"   → India (epg.pw): {found} matching channels found | {len(in_pw_prog)} programmes")
+        if found < len(TARGET_CHANNEL_IDS):
+            missing = TARGET_CHANNEL_IDS - set(in_pw_ch.keys())
+            print(f"      Missing: {', '.join(missing)}")
+        print("")
+    else:
+        print("   → epg.pw India EPG fetch failed - skipping\n")
+
+    # 3. Custom 3rd-party source (filtered)
     if CUSTOM_EPG_URL:
         print(f"3. Fetching Custom EPG (filtered: {', '.join(CUSTOM_KEYWORDS)})...")
         custom_xml = fetch_epg(CUSTOM_EPG_URL)
         if custom_xml:
             custom_root = parse_epg(custom_xml)
-            cust_ch, cust_prog = extract_channels_and_programmes(custom_root, CUSTOM_KEYWORDS)
+            cust_ch, cust_prog = extract_channels_and_programmes(custom_root, keywords=CUSTOM_KEYWORDS)
             all_channels.update(cust_ch)
             all_programmes.extend(cust_prog)
-            print(f"   → Custom (fox/kayo/astro): {len(cust_ch)} channels | {len(cust_prog)} programmes\n")
+            print(f"   → Custom: {len(cust_ch)} channels | {len(cust_prog)} programmes\n")
         else:
             print("   → Custom EPG fetch failed\n")
     else:
-        print("⚠️  CUSTOM_EPG_URL secret not set! Skipping custom source.\n")
+        print("⚠️ CUSTOM_EPG_URL secret not set! Skipping custom source.\n")
 
     # Final output
     if not all_programmes:
         raise Exception("No programmes collected from any source!")
 
     tv = ET.Element('tv', {
-        'generator-info-name': 'Merged Sports EPG (UK+IN+Custom)',
+        'generator-info-name': 'Merged Sports & Selected EPG (UK+IN+Jio+epg.pw+Custom)',
         'generator-info-url': 'GitHub Actions'
     })
 
