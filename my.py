@@ -110,12 +110,10 @@ CUSTOM_KEYWORDS = ['fox', 'AU: Kayo 4K', 'AU: BEIN', 'AU: ESPN', 'astro']
 
 # All requested channel IDs from epg.pw IN source (unique set)
 TARGET_CHANNEL_IDS = {
-    # Previous batch
     '463932',   # Sony Pix hd
     '404001',   # Zee bangla hd
     '464235',   # Star Jalsha HD
     '464213',   # Sony BBC Earth HD
-    # New batch
     '464165',   # Star Gold hd
     '407811',   # 9x jalwa
     '463907',   # Zee cinema hd
