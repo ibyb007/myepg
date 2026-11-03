@@ -99,7 +99,7 @@ def filter_out_regional(channels_dict):
 # ========================================
 
 UK_EPG_URL    = 'https://epg.pw/xmltv/epg_GB.xml.gz'
-IN_EPG_URL    = 'https://avkb.short.gy/jioepg.xml.gz'
+IN_EPG_URL    = 'https://avkb.short.gy/epg.xml.gz'
 IN_EPG_PW_URL = 'https://epg.pw/xmltv/epg_IN.xml.gz'           # ← Selective source
 
 # GitHub Actions secret
