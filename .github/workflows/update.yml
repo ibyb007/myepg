@@ -25,9 +25,7 @@ jobs:
           pip install requests
 
       - name: Run EPG script
-        env:
-          CUSTOM_EPG_URL: ${{ secrets.CUSTOM_EPG_URL }}   # ← THIS IS REQUIRED!
-        run: python my.py                                   # ← Make sure filename matches!
+        run: python my.py
 
       - name: Commit and push epg.xml.gz if changed
         run: |
