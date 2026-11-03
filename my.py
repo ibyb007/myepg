@@ -102,11 +102,10 @@ UK_EPG_URL    = 'https://epg.pw/xmltv/epg_GB.xml.gz'
 IN_EPG_URL    = 'https://avkb.short.gy/epg.xml.gz'
 IN_EPG_PW_URL = 'https://epg.pw/xmltv/epg_IN.xml.gz'           # ← Selective source
 
-# GitHub Actions secret
-CUSTOM_EPG_URL = os.getenv('CUSTOM_EPG_URL')
+AU_EPG_URL    = 'https://iptv-epg.org/files/epg-au.xml.gz'
 
 UK_KEYWORDS    = ['sky', 'tnt sports', 'premier sports', 'bt sport', 'eurosport', 'itv', 'bbc']
-CUSTOM_KEYWORDS = ['fox', 'AU: Kayo 4K', 'AU: BEIN', 'AU: ESPN', 'astro']
+AU_KEYWORDS    = ['fox', 'au: kayo 4k', 'au: bein', 'au: espn', 'astro']
 
 # All requested channel IDs from epg.pw IN source (unique set)
 TARGET_CHANNEL_IDS = {
@@ -130,7 +129,7 @@ TARGET_CHANNEL_IDS = {
     '448070'    # &xplor HD
 }
 
-print("=== Starting EPG Merge (UK + IN(Jio) + IN(epg.pw selective) + Custom Filtered) ===\n")
+print("=== Starting EPG Merge (UK + IN(Jio) + IN(epg.pw selective) + AU Filtered) ===\n")
 
 all_channels = {}
 all_programmes = []
@@ -179,27 +178,24 @@ try:
     else:
         print("   → epg.pw India EPG fetch failed - skipping\n")
 
-    # 3. Custom 3rd-party source (filtered)
-    if CUSTOM_EPG_URL:
-        print(f"3. Fetching Custom EPG (filtered: {', '.join(CUSTOM_KEYWORDS)})...")
-        custom_xml = fetch_epg(CUSTOM_EPG_URL)
-        if custom_xml:
-            custom_root = parse_epg(custom_xml)
-            cust_ch, cust_prog = extract_channels_and_programmes(custom_root, keywords=CUSTOM_KEYWORDS)
-            all_channels.update(cust_ch)
-            all_programmes.extend(cust_prog)
-            print(f"   → Custom: {len(cust_ch)} channels | {len(cust_prog)} programmes\n")
-        else:
-            print("   → Custom EPG fetch failed\n")
+    # 3. Australia (filtered)
+    print(f"3. Fetching AU EPG (filtered: {', '.join(AU_KEYWORDS)})...")
+    au_xml = fetch_epg(AU_EPG_URL)
+    if au_xml:
+        au_root = parse_epg(au_xml)
+        au_ch, au_prog = extract_channels_and_programmes(au_root, keywords=AU_KEYWORDS)
+        all_channels.update(au_ch)
+        all_programmes.extend(au_prog)
+        print(f"   → AU: {len(au_ch)} channels | {len(au_prog)} programmes\n")
     else:
-        print("⚠️ CUSTOM_EPG_URL secret not set! Skipping custom source.\n")
+        print("   → AU EPG fetch failed - skipping\n")
 
     # Final output
     if not all_programmes:
         raise Exception("No programmes collected from any source!")
 
     tv = ET.Element('tv', {
-        'generator-info-name': 'Merged EPG (UK + IN Jio + Selective Hindi/Movies/Entertainment from epg.pw + Custom)',
+        'generator-info-name': 'Merged EPG (UK + IN Jio + Selective Hindi/Movies/Entertainment from epg.pw + AU)',
         'generator-info-url': 'GitHub Actions'
     })
 
