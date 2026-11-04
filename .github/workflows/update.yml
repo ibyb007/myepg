@@ -5,9 +5,13 @@ on:
     - cron: '0 */6 * * *'   # Changed to every 6 hours (recommended for sports EPG)
   workflow_dispatch:
 
+permissions:
+  contents: write          # the job commits epg.xml.gz back to the repo
+
 jobs:
   fetch-epg:
     runs-on: ubuntu-latest
+    timeout-minutes: 30      # backup sources can make a run longer when the primary ones are down
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
